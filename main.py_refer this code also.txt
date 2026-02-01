@@ -1,0 +1,112 @@
+import pandas as pd
+import numpy as np
+import webbrowser
+import os
+
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+from feature_extraction import extract_features
+from train_models import train_all_models
+
+# ================================
+# 1. Load Dataset
+# ================================
+data = pd.read_csv("url_dataset_50000_shuffled.csv")
+data["Label"] = data["Label"].map({"Normal": 0, "Attack": 1})
+
+# ================================
+# 2. Feature Extraction
+# ================================
+X = data["URL"].apply(extract_features).tolist()
+X = np.array(X)
+y = data["Label"].values
+
+# ================================
+# 3. 5-Fold Cross Validation
+# ================================
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+metrics = {
+    "Logistic Regression": {"acc": [], "prec": [], "rec": [], "f1": []},
+    "Decision Tree": {"acc": [], "prec": [], "rec": [], "f1": []},
+    "Random Forest": {"acc": [], "prec": [], "rec": [], "f1": []},
+    "SVM": {"acc": [], "prec": [], "rec": [], "f1": []}
+}
+
+for train_idx, test_idx in skf.split(X, y):
+    X_train, X_test = X[train_idx], X[test_idx]
+    y_train, y_test = y[train_idx], y[test_idx]
+
+    models = train_all_models(X_train, y_train)
+
+    for name, model in models.items():
+        y_pred = model.predict(X_test)
+
+        metrics[name]["acc"].append(accuracy_score(y_test, y_pred))
+        metrics[name]["prec"].append(precision_score(y_test, y_pred))
+        metrics[name]["rec"].append(recall_score(y_test, y_pred))
+        metrics[name]["f1"].append(f1_score(y_test, y_pred))
+
+# ================================
+# 4. Average + Round to 2 decimals
+# ================================
+results = []
+
+for model in metrics:
+    results.append([
+        model,
+        round(np.mean(metrics[model]["acc"]), 2),
+        round(np.mean(metrics[model]["prec"]), 2),
+        round(np.mean(metrics[model]["rec"]), 2),
+        round(np.mean(metrics[model]["f1"]), 2)
+    ])
+
+comparison_df = pd.DataFrame(
+    results,
+    columns=["Algorithm", "Accuracy", "Precision", "Recall", "F1-score"]
+)
+
+# ================================
+# 5. Display in New HTML Page
+# ================================
+html = f"""
+<html>
+<head>
+    <title>Model Comparison Table</title>
+    <style>
+        body {{
+            font-family: Arial;
+            padding: 40px;
+        }}
+        h2 {{
+            text-align: center;
+        }}
+        table {{
+            border-collapse: collapse;
+            margin: auto;
+            width: 80%;
+        }}
+        th, td {{
+            border: 1px solid black;
+            padding: 12px;
+            text-align: center;
+            font-size: 16px;
+        }}
+        th {{
+            background-color: #f2f2f2;
+        }}
+    </style>
+</head>
+<body>
+    <h2>MODEL COMPARISON TABLE</h2>
+    {comparison_df.to_html(index=False)}
+</body>
+</html>
+"""
+
+file_name = "model_comparison.html"
+with open(file_name, "w") as f:
+    f.write(html)
+
+webbrowser.open("file://" + os.path.realpath(file_name))
